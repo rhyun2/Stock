@@ -12,7 +12,7 @@ def post_message(token, channel, text):
         data={"channel": channel,"text": text}
     )
  
-myToken = "KEY"
+myToken = ""
 def dbgout(message):
     """인자로 받은 문자열을 파이썬 셸과 슬랙으로 동시에 출력한다."""
     print(datetime.now().strftime('[%m/%d %H:%M:%S]'), message)
@@ -149,20 +149,28 @@ def get_target_bollinger(code):
     try:
         time_now = datetime.now()
         str_today = time_now.strftime('%Y%m%d')
-        ohlc = get_ohlc(code, 20)
+        ohlc = get_ohlc(code, 21)
         if str_today == str(ohlc.iloc[0].name):
             lastday = ohlc.iloc[1].name
         else:
             lastday = ohlc.iloc[0].name                                     
         closes = ohlc['close'].sort_index()
-        ma = closes.rolling(window=20).mean()
-        std = closes.rolling(window=20).std()
+        ma = closes.shift(periods=-1).rolling(window=20).mean()
+        std = closes.shift(periods=-1).rolling(window=20).std()
         target_price = ma.loc[lastday] + std.loc[lastday] * 0.7
         return target_price
     except Exception as ex:
         dbgout("`get_target_bollinger() -> exception! " + str(ex) + "`")
         return None
-    
+
+def list_target_price(symbol_list):
+    """매수 목표가를 표시한다."""
+    for code in symbol_list:
+        target_price = get_target_bollinger(code)
+        dbgout(code + " Up.:" + str(int(target_price)))
+        dbgout(code + " M05:" + str(int(get_movingaverage(code, 5))))
+        dbgout(code + " M10:" + str(int(get_movingaverage(code, 10))))
+
 def get_movingaverage(code, window):
     """인자로 받은 종목에 대한 이동평균가격을 반환한다."""
     try:
@@ -229,7 +237,7 @@ def buy_etf(code):
             if bought_qty > 0:
                 bought_list.append(code)
                 dbgout("`buy_etf("+ str(stock_name) + ' : ' + str(code) + 
-                    ") -> " + str(bought_qty) + "EA bought!" + "`")
+                    ") -> " + str(bought_qty) + "EA bought by the MA!" + "`")
     except Exception as ex:
         dbgout("`buy_etf("+ str(code) + ") -> exception! " + str(ex) + "`")
 
@@ -269,8 +277,7 @@ def sell_all():
 
 if __name__ == '__main__': 
     try:
-        # symbol_list = ['A306200', 'A000070', 'A071050', 'A200880', 'A078930'] # 타겟 종목
-        symbol_list = ['A430690'] # 타겟 종목, 한싹
+        symbol_list = ['A030200'] # KT, SK  
         bought_list = []     # 매수 완료된 종목 리스트
         target_buy_count = 1 # 매수할 종목 수
         buy_percent = 1.0
@@ -283,6 +290,8 @@ if __name__ == '__main__':
         printlog('종목별 주문 금액 :', buy_amount)
         printlog('시작 시간 :', datetime.now().strftime('%m/%d %H:%M:%S'))
         soldout = False
+
+        list_target_price(symbol_list)
 
         while True:
             t_now = datetime.now()
