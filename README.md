@@ -44,6 +44,6 @@
   거래 당일 종가를 예측하는 것이 수익을 내는데 중요한 요소  
   한 달간 주가 추이를 3차 그래프로  Fitting하여 향후 5일간 가격을 예측해 봄  
   (아래 차트: 종가 추이와 향후 5일간 추정 => 회색 에측가, 적색 실제가) 
-  ![Figure_1](https://github.com/user-attachments/assets/a68d513c-1f68-4ac4-bfe2-d22b170c18cc)
+  ![Figure_1](https://github.com/user-attachments/assets/d8ee2868-90bd-49df-9999-06a9d8401112)
 
   
