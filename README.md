@@ -39,5 +39,6 @@
 # 3. 다항식 예측 프로그램
   거래 당일 종가를 예측하는 것이 수익을 내는데 중요한 요소  
   주가 추이를 3차 그래프로  Fitting하여 미래 값을 예측해 봄  
+  ![Figure_1](https://github.com/user-attachments/assets/a68d513c-1f68-4ac4-bfe2-d22b170c18cc)
 
   
