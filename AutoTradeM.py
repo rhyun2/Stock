@@ -230,10 +230,10 @@ def sell_all():
 
 if __name__ == '__main__': 
     try:
-        symbol_list = ['A030200', 'A328130', 'A028300', 'A078930', 'A007070'] # KT, 루닛, HLB, GS, GS리테일  
+        symbol_list = ['A030200'] # KT  
         bought_list = []     # 매수 완료된 종목 리스트
-        target_buy_count = 5 # 매수할 종목 수
-        buy_percent = 0.2
+        target_buy_count = 1 # 매수할 종목 수
+        buy_percent = 1.0
         printlog('check_creon_system() :', check_creon_system())  # 크레온 접속 점검
         stocks = get_stock_balance('ALL')      # 보유한 모든 종목 조회
         total_cash = int(get_current_cash())   # 100% 증거금 주문 가능 금액 조회
