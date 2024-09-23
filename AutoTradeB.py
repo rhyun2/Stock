@@ -166,7 +166,7 @@ def get_target_bollinger(code):
 def list_target_price(symbol_list):
     """매수 목표가를 표시한다."""
     for code in symbol_list:
-        stock_name, stock_qty = get_stock_balance(code)
+        stock_name, stock_qty = get_stock_balance(code) # 코드를 종목명으로 변경
         target_price = get_target_bollinger(code)
         dbgout(stock_name + " Up.:" + str(int(target_price)))
         dbgout(stock_name + " M05:" + str(int(get_movingaverage(code, 5))))
