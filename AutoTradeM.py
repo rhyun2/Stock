@@ -61,13 +61,14 @@ def get_current_price(code):
     item['bid'] =  cpStock.GetHeaderValue(17)        # 매수호가    
     return item['cur_price'], item['ask'], item['bid']
 
-def get_ohlc(code, qty):
-    """인자로 받은 종목의 OHLC 가격 정보를 qty 개수만큼 반환한다."""
+def get_mt(code, qty):
+    """인자로 받은 종목의 5분 단위 OHLC 가격 정보를 qty 개수만큼 반환한다."""
     cpOhlc.SetInputValue(0, code)           # 종목코드
     cpOhlc.SetInputValue(1, ord('2'))        # 1:기간, 2:개수
     cpOhlc.SetInputValue(4, qty)             # 요청개수
-    cpOhlc.SetInputValue(5, [0, 2, 3, 4, 5]) # 0:날짜, 2~5:OHLC
-    cpOhlc.SetInputValue(6, ord('D'))        # D:일단위
+    cpOhlc.SetInputValue(5, [0, 1, 2, 3, 4, 5]) # 1:시분, 2~5:OHLC
+    cpOhlc.SetInputValue(6, ord('m'))        # m:분단위
+    cpOhlc.SetInputValue(7, 5)               # 분틱차트 주기(5분)
     cpOhlc.SetInputValue(9, ord('1'))        # 0:무수정주가, 1:수정주가
     cpOhlc.BlockRequest()
     count = cpOhlc.GetHeaderValue(3)   # 3:수신개수
@@ -75,9 +76,9 @@ def get_ohlc(code, qty):
     index = []
     rows = []
     for i in range(count): 
-        index.append(cpOhlc.GetDataValue(0, i)) 
-        rows.append([cpOhlc.GetDataValue(1, i), cpOhlc.GetDataValue(2, i),
-            cpOhlc.GetDataValue(3, i), cpOhlc.GetDataValue(4, i)]) 
+        index.append(str(cpOhlc.GetDataValue(0, i)) + '{:04d}'.format(cpOhlc.GetDataValue(1, i))) 
+        rows.append([cpOhlc.GetDataValue(2, i), cpOhlc.GetDataValue(3, i),
+            cpOhlc.GetDataValue(4, i), cpOhlc.GetDataValue(5, i)]) 
     df = pd.DataFrame(rows, columns=columns, index=index) 
     return df
 
@@ -124,72 +125,26 @@ def get_current_cash():
     cpCash.BlockRequest() 
     return cpCash.GetHeaderValue(9) # 증거금 100% 주문 가능 금액
 
-def get_target_price(code):
-    """매수 목표가를 반환한다."""
+def get_macd(code):
+    """인자로 받은 종목에 대한 buy or sell, MACD, Signal을 반환한다."""
     try:
-        time_now = datetime.now()
-        str_today = time_now.strftime('%Y%m%d')
-        ohlc = get_ohlc(code, 10)
-        if str_today == str(ohlc.iloc[0].name):
-            today_open = ohlc.iloc[0].open 
-            lastday = ohlc.iloc[1]
-        else:
-            lastday = ohlc.iloc[0]                                      
-            today_open = lastday[3]
-        lastday_high = lastday[1]
-        lastday_low = lastday[2]
-        target_price = today_open + (lastday_high - lastday_low) * 0.5
-        return target_price
-    except Exception as ex:
-        dbgout("`get_target_price() -> exception! " + str(ex) + "`")
-        return None
-
-def get_target_bollinger(code):
-    """볼린저 밴드를 활용하여 매수 목표가를 반환한다."""
-    try:
-        time_now = datetime.now()
-        str_today = time_now.strftime('%Y%m%d')
-        ohlc = get_ohlc(code, 21)
-        if str_today == str(ohlc.iloc[0].name):
-            lastday = ohlc.iloc[1].name
-        else:
-            lastday = ohlc.iloc[0].name                                     
+        ohlc = get_mt(code, 30)
         closes = ohlc['close'].sort_index()
-        ma = closes.shift(periods=-1).rolling(window=20).mean()
-        std = closes.shift(periods=-1).rolling(window=20).std()
-        target_price = ma.loc[lastday] + std.loc[lastday] * 0.7
-        return target_price
+        ema12 = closes.ewm(span=12, adjust=False).mean()
+        ema26 = closes.ewm(span=26, adjust=False).mean()
+        macd = ema12 - ema26
+        signal = macd.ewm(span=9, adjust=False).mean()
+        buy_signal = 0
+        if macd[-2] > signal[-2] and macd[-1] < signal[-1]:
+            buy_signal = -1
+        elif macd[-2] < signal[-2] and macd[-1] > signal[-1]:
+            buy_signal = +1
+        return buy_signal, macd[-1], signal[-1]
     except Exception as ex:
-        dbgout("`get_target_bollinger() -> exception! " + str(ex) + "`")
-        return None
-
-def list_target_price(symbol_list):
-    """매수 목표가를 표시한다."""
-    for code in symbol_list:
-        stock_name, stock_qty = get_stock_balance(code)
-        target_price = get_target_bollinger(code)
-        dbgout(stock_name + " Up.:" + str(int(target_price)))
-        dbgout(stock_name + " M05:" + str(int(get_movingaverage(code, 5))))
-        dbgout(stock_name + " M10:" + str(int(get_movingaverage(code, 10))))
-
-def get_movingaverage(code, window):
-    """인자로 받은 종목에 대한 이동평균가격을 반환한다."""
-    try:
-        time_now = datetime.now()
-        str_today = time_now.strftime('%Y%m%d')
-        ohlc = get_ohlc(code, 20)
-        if str_today == str(ohlc.iloc[0].name):
-            lastday = ohlc.iloc[1].name
-        else:
-            lastday = ohlc.iloc[0].name
-        closes = ohlc['close'].sort_index()         
-        ma = closes.rolling(window=window).mean()
-        return ma.loc[lastday]
-    except Exception as ex:
-        dbgout('get_movingavrg(' + str(window) + ') -> exception! ' + str(ex))
+        dbgout('get_macd(' + str(code) + ') -> exception! ' + str(ex))
         return None    
 
-def buy_etf(code):
+def buy_stock(code):
     """인자로 받은 종목을 최유리 지정가 FOK 조건으로 매수한다."""
     try:
         global bought_list      # 함수 내에서 값 변경을 하기 위해 global로 지정
@@ -197,18 +152,15 @@ def buy_etf(code):
             #printlog('code:', code, 'in', bought_list)
             return False
         time_now = datetime.now()
-        current_price, ask_price, bid_price = get_current_price(code) 
-        target_price = get_target_bollinger(code)    # 매수 목표가
-        ma5_price = get_movingaverage(code, 5)   # 5일 이동평균가
-        ma10_price = get_movingaverage(code, 10) # 10일 이동평균가
+        current_price, ask_price, bid_price = get_current_price(code)
+        buy_signal, macd, signal = get_macd(code) # MACD signal 
         buy_qty = 0        # 매수할 수량 초기화
         if ask_price > 0:  # 매도호가가 존재하면   
             buy_qty = buy_amount // ask_price  
         stock_name, stock_qty = get_stock_balance(code)  # 종목명과 보유수량 조회
         #printlog('bought_list:', bought_list, 'len(bought_list):',
         #    len(bought_list), 'target_buy_count:', target_buy_count)     
-        if current_price > target_price and current_price > ma5_price \
-            and current_price > ma10_price:  
+        if buy_signal == 1:  
             printlog(stock_name + '(' + str(code) + ') ' + str(buy_qty) +
                 'EA : ' + str(current_price) + ' meets the buy condition!`')            
             cpTradeUtil.TradeInit()
@@ -237,10 +189,10 @@ def buy_etf(code):
             printlog('get_stock_balance :', stock_name, stock_qty)
             if bought_qty > 0:
                 bought_list.append(code)
-                dbgout("`buy_etf("+ str(stock_name) + ' : ' + str(code) + 
-                    ") -> " + str(bought_qty) + "EA bought by the MA!" + "`")
+                dbgout("`buy_stock("+ str(stock_name) + ' : ' + str(code) + 
+                    ") -> " + str(bought_qty) + "EA bought!" + "`")
     except Exception as ex:
-        dbgout("`buy_etf("+ str(code) + ") -> exception! " + str(ex) + "`")
+        dbgout("`buy_stock("+ str(code) + ") -> exception! " + str(ex) + "`")
 
 def sell_all():
     """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
@@ -278,10 +230,10 @@ def sell_all():
 
 if __name__ == '__main__': 
     try:
-        symbol_list = ['A030200'] # KT, SK  
+        symbol_list = ['A030200', 'A328130', 'A028300', 'A078930', 'A007070'] # KT, 루닛, HLB, GS, GS리테일  
         bought_list = []     # 매수 완료된 종목 리스트
-        target_buy_count = 1 # 매수할 종목 수
-        buy_percent = 1.0
+        target_buy_count = 5 # 매수할 종목 수
+        buy_percent = 0.2
         printlog('check_creon_system() :', check_creon_system())  # 크레온 접속 점검
         stocks = get_stock_balance('ALL')      # 보유한 모든 종목 조회
         total_cash = int(get_current_cash())   # 100% 증거금 주문 가능 금액 조회
@@ -291,8 +243,6 @@ if __name__ == '__main__':
         printlog('종목별 주문 금액 :', buy_amount)
         printlog('시작 시간 :', datetime.now().strftime('%m/%d %H:%M:%S'))
         soldout = False
-
-        list_target_price(symbol_list)
 
         while True:
             t_now = datetime.now()
@@ -310,7 +260,7 @@ if __name__ == '__main__':
             if t_start < t_now < t_sell :  # AM 09:05 ~ PM 03:15 : 매수
                 for sym in symbol_list:
                     if len(bought_list) < target_buy_count:
-                        buy_etf(sym)
+                        buy_stock(sym)
                         time.sleep(1)
                 if t_now.minute == 30 and 0 <= t_now.second <= 5: 
                     get_stock_balance('ALL')
