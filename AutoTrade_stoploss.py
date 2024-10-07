@@ -125,23 +125,39 @@ def get_current_cash():
     cpCash.BlockRequest() 
     return cpCash.GetHeaderValue(9) # 증거금 100% 주문 가능 금액
 
-def get_macd(code):
+def get_macd_rsi(code):
     """인자로 받은 종목에 대한 buy or sell, MACD, Signal을 반환한다."""
     try:
         ohlc = get_mt(code, 30)
         closes = ohlc['close'].sort_index()
+        # MACD 계산
         ema12 = closes.ewm(span=12, adjust=False).mean()
         ema26 = closes.ewm(span=26, adjust=False).mean()
         macd = ema12 - ema26
         signal = macd.ewm(span=9, adjust=False).mean()
-        buy_signal = 0
-        if macd[-2] > signal[-2] and macd[-1] < signal[-1]:
-            buy_signal = -1
-        elif macd[-2] < signal[-2] and macd[-1] > signal[-1]:
-            buy_signal = +1
-        return buy_signal, macd[-1], signal[-1]
+        macd_buy_signal = 0
+        if macd[-2] > signal[-2] and macd[-1] <= signal[-1]:
+            macd_buy_signal = -1
+        elif macd[-2] < signal[-2] and macd[-1] >= signal[-1]:
+            macd_buy_signal = +1
+        # RSI 계산
+        diffs = closes.diff()
+        gain = (diffs[diffs > 0.0] + diffs)/2
+        gain = gain.fillna(0.0)
+        loss = -(diffs[diffs < 0.0] + diffs)/2
+        loss = loss.fillna(0.0)
+        avg_gain = gain.rolling(window=14).mean()
+        avg_loss = loss.rolling(window=14).mean()
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100/ (1 + rs))
+        rsi_buy_signal = 0
+        if rsi[-2] < 70.0 and rsi[-1] >= 70.0:
+            rsi_buy_signal = -1
+        elif rsi[-2] > 30.0 and rsi[-1] <= 30.0:
+            rsi_buy_signal = +1
+        return macd, macd_buy_signal, rsi, rsi_buy_signal
     except Exception as ex:
-        dbgout('get_macd(' + str(code) + ') -> exception! ' + str(ex))
+        dbgout('get_macd_rsi(' + str(code) + ') -> exception! ' + str(ex))
         return None    
 
 def buy_stock(code):
@@ -151,16 +167,19 @@ def buy_stock(code):
         if code in bought_list: # 매수 완료 종목이면 더 이상 안 사도록 함수 종료
             #printlog('code:', code, 'in', bought_list)
             return False
+        if code in sold_list:   # 매도 완료 종목이면 더 이상 안 사도록 함수 종료
+            #printlog('code:', code, 'in', sold_list)
+            return False
         time_now = datetime.now()
         current_price, ask_price, bid_price = get_current_price(code)
-        buy_signal, macd, signal = get_macd(code) # MACD signal 
+        macd, macd_buy_signal, rsi, rsi_buy_signal = get_macd_rsi(code) # MACD & RSI signal 
         buy_qty = 0        # 매수할 수량 초기화
         if ask_price > 0:  # 매도호가가 존재하면   
             buy_qty = buy_amount // ask_price  
         stock_name, stock_qty = get_stock_balance(code)  # 종목명과 보유수량 조회
         #printlog('bought_list:', bought_list, 'len(bought_list):',
         #    len(bought_list), 'target_buy_count:', target_buy_count)     
-        if buy_signal == 1:  
+        if macd_buy_signal == 1:
             printlog(stock_name + '(' + str(code) + ') ' + str(buy_qty) +
                 'EA : ' + str(current_price) + ' meets the buy condition!`')            
             cpTradeUtil.TradeInit()
@@ -197,7 +216,7 @@ def buy_stock(code):
 def sell_stock():
     """주식 계좌에서 손절가격(수익률)을 만족한 종목을 최유리 지정가 IOC 조건으로 매도한다."""
     try:
-        global bought_list      # 함수 내에서 값 변경을 하기 위해 global로 지정
+        global bought_list, sold_list      # 함수 내에서 값 변경을 하기 위해 global로 지정
         cpTradeUtil.TradeInit()
         acc = cpTradeUtil.AccountNumber[0]      # 계좌번호
         accFlag = cpTradeUtil.GoodsList(acc, 1) # -1:전체, 1:주식, 2:선물/옵션
@@ -211,7 +230,7 @@ def sell_stock():
             stock_profit = cpBalance.GetDataValue(11, i)# 수익률
             stock_qty = cpBalance.GetDataValue(15, i)   # 수량
             if stock_code in bought_list:
-                if stock_profit < -2.0:  # 수익률 -2% 이상 손절
+                if stock_profit < -2.0:  # 수익률 -2% 초과 손절
                     if stock_qty != 0:
                         printlog(stock_name + '(' + str(stock_code) + ') ' + str(stock_qty) +
                             'EA : ' + str(stock_profit) + ' meets the stop loss condition!`')            
@@ -235,6 +254,7 @@ def sell_stock():
                         printlog('sell_stock :', stock_name, left_qty)
                         if left_qty == 0:
                             bought_list.remove(stock_code)
+                            sold_list.append(code)
                             dbgout("`sell_stock("+ str(stock_name) + ' : ' + str(stock_code) + 
                                 ") -> " + str(left_qty) + "EA left" + "`")
     except Exception as ex:
@@ -276,10 +296,11 @@ def sell_all():
 
 if __name__ == '__main__': 
     try:
-        symbol_list = ['A030200', 'A328130', 'A028300', 'A078930', 'A007070'] # KT, 루닛, HLB, GS, GS리테일  
+        symbol_list = ['A030200'] # KT  
         bought_list = []     # 매수 완료된 종목 리스트
-        target_buy_count = 5 # 매수할 종목 수
-        buy_percent = 0.2
+        sold_list = []       # 매도 완료된 종목 리스트
+        target_buy_count = 1 # 매수할 종목 수
+        buy_percent = 1.0
         printlog('check_creon_system() :', check_creon_system())  # 크레온 접속 점검
         stocks = get_stock_balance('ALL')      # 보유한 모든 종목 조회
         total_cash = int(get_current_cash())   # 100% 증거금 주문 가능 금액 조회
