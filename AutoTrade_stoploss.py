@@ -254,7 +254,7 @@ def sell_stock():
                         printlog('sell_stock :', stock_name, left_qty)
                         if left_qty == 0:
                             bought_list.remove(stock_code)
-                            sold_list.append(code)
+                            sold_list.append(stock_code)
                             dbgout("`sell_stock("+ str(stock_name) + ' : ' + str(stock_code) + 
                                 ") -> " + str(left_qty) + "EA left" + "`")
     except Exception as ex:
